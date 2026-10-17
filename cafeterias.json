@@ -1,0 +1,841 @@
+{
+  "uid": "cafeterias-teusaquillo",
+  "title": "Cafeterías de Teusaquillo · Análisis de oferta",
+  "tags": [
+    "actividad5",
+    "rds",
+    "cafeterias"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 0,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": null,
+      "options": {
+        "mode": "markdown",
+        "content": "### Oferta de cafeterías en Teusaquillo, Bogotá\nFuente: Amazon RDS PostgreSQL, tabla `cafeterias_teusaquillo` (46 establecimientos de Foursquare). Pipeline: Foursquare API → S3 (zona raw) → AWS Lambda (UPSERT) → RDS → Grafana en EC2."
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Indicadores clave",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH limites AS (\n    SELECT MIN(latitude)  AS lat_min, MAX(latitude)  AS lat_max,\n           MIN(longitude) AS lon_min, MAX(longitude) AS lon_max\n    FROM cafeterias_teusaquillo\n),\nmalla AS (\n    SELECT i, j\n    FROM limites,\n         generate_series(0, FLOOR((lat_max - lat_min) / 0.0045)::INT) AS i,\n         generate_series(0, FLOOR((lon_max - lon_min) / 0.0045)::INT) AS j\n),\nocupadas AS (\n    SELECT DISTINCT FLOOR((c.latitude  - l.lat_min) / 0.0045)::INT AS i,\n                    FLOOR((c.longitude - l.lon_min) / 0.0045)::INT AS j\n    FROM cafeterias_teusaquillo c CROSS JOIN limites l\n)\nSELECT\n    (SELECT COUNT(*) FROM cafeterias_teusaquillo)                        AS \"Cafeterías\",\n    (SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE jsonb_array_length(categories) > 1)\n                  / COUNT(*), 1) FROM cafeterias_teusaquillo)            AS \"% multicategoría\",\n    (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY distance_m)\n       FROM cafeterias_teusaquillo)                                      AS \"Distancia mediana (m)\",\n    ROUND(100.0 * (SELECT COUNT(*) FROM ocupadas) / (SELECT COUNT(*) FROM malla), 1)\n                                                                         AS \"% celdas con oferta\""
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8F3B1B"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^%.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Distancia mediana (m)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: m"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "id": 2,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "geomap",
+      "title": "Mapa de cafeterías por categoría",
+      "gridPos": {
+        "h": 13,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    name             AS \"Cafetería\",\n    latitude,\n    longitude,\n    primary_category AS \"Categoría\",\n    distance_m       AS \"Distancia (m)\"\nFROM cafeterias_teusaquillo"
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 4.637,
+          "lon": -74.086,
+          "zoom": 14,
+          "allLayers": true
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": true
+        },
+        "basemap": {
+          "type": "osm-standard",
+          "name": "OpenStreetMap",
+          "config": {}
+        },
+        "tooltip": {
+          "mode": "details"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Cafeterías",
+            "tooltip": true,
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            },
+            "config": {
+              "showLegend": false,
+              "style": {
+                "size": {
+                  "fixed": 8
+                },
+                "opacity": 0.9,
+                "color": {
+                  "field": "Categoría",
+                  "fixed": "#8F3B1B"
+                },
+                "symbol": {
+                  "mode": "fixed",
+                  "fixed": "img/icons/marker/circle.svg"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8F3B1B"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Categoría"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Coffee Shop": {
+                        "color": "#8F3B1B",
+                        "index": 0
+                      },
+                      "Café": {
+                        "color": "#D4A017",
+                        "index": 1
+                      },
+                      "Bakery": {
+                        "color": "#5794F2",
+                        "index": 2
+                      },
+                      "Bicycle Store": {
+                        "color": "#73BF69",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "id": 3,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "geomap",
+      "title": "Densidad por celda de ~500 m (verde = sin oferta, rojo = saturada)",
+      "gridPos": {
+        "h": 13,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH limites AS (\n    SELECT MIN(latitude)  AS lat_min, MAX(latitude)  AS lat_max,\n           MIN(longitude) AS lon_min, MAX(longitude) AS lon_max\n    FROM cafeterias_teusaquillo\n),\nmalla AS (                      -- todas las celdas posibles del área\n    SELECT i, j\n    FROM limites,\n         generate_series(0, FLOOR((lat_max - lat_min) / 0.0045)::INT) AS i,\n         generate_series(0, FLOOR((lon_max - lon_min) / 0.0045)::INT) AS j\n),\nconteo AS (                     -- cafeterías y diversidad por celda ocupada\n    SELECT FLOOR((c.latitude  - l.lat_min) / 0.0045)::INT AS i,\n           FLOOR((c.longitude - l.lon_min) / 0.0045)::INT AS j,\n           COUNT(*)                                        AS cafeterias,\n           COUNT(*) FILTER (WHERE jsonb_array_length(c.categories) > 1) AS hibridas,\n           string_agg(c.name, ', ' ORDER BY c.name)        AS establecimientos\n    FROM cafeterias_teusaquillo c CROSS JOIN limites l\n    GROUP BY 1, 2\n)\nSELECT\n    'C' || LPAD(m.i::TEXT, 2, '0') || '-' || LPAD(m.j::TEXT, 2, '0') AS \"Celda\",\n    ROUND((l.lat_min + (m.i + 0.5) * 0.0045)::NUMERIC, 5)          AS latitude,\n    ROUND((l.lon_min + (m.j + 0.5) * 0.0045)::NUMERIC, 5)          AS longitude,\n    COALESCE(c.cafeterias, 0)                                       AS \"Cafeterías\",\n    COALESCE(c.hibridas, 0)                                         AS \"Híbridas\",\n    DENSE_RANK() OVER (ORDER BY COALESCE(c.cafeterias, 0) DESC)     AS \"Ranking\",\n    ROUND(100.0 * COALESCE(c.cafeterias, 0)\n          / SUM(COALESCE(c.cafeterias, 0)) OVER (), 1)              AS \"% de la oferta\",\n    CASE\n        WHEN COALESCE(c.cafeterias, 0) >= 3 THEN 'Saturada'\n        WHEN COALESCE(c.cafeterias, 0) = 2  THEN 'Competida'\n        WHEN COALESCE(c.cafeterias, 0) = 1  THEN 'Baja oferta'\n        ELSE 'Sin oferta (oportunidad)'\n    END                                                             AS \"Nivel de competencia\",\n    COALESCE(c.establecimientos, '')                                AS \"Establecimientos\"\nFROM malla m\nCROSS JOIN limites l\nLEFT JOIN conteo c ON c.i = m.i AND c.j = m.j\nORDER BY \"Cafeterías\" DESC, \"Celda\""
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 4.637,
+          "lon": -74.086,
+          "zoom": 14,
+          "allLayers": true
+        },
+        "controls": {
+          "showZoom": true,
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showScale": true
+        },
+        "basemap": {
+          "type": "osm-standard",
+          "name": "OpenStreetMap",
+          "config": {}
+        },
+        "tooltip": {
+          "mode": "details"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Celdas",
+            "tooltip": true,
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            },
+            "config": {
+              "showLegend": true,
+              "style": {
+                "size": {
+                  "field": "Cafeterías",
+                  "min": 8,
+                  "max": 26,
+                  "fixed": 10
+                },
+                "opacity": 0.55,
+                "color": {
+                  "field": "Cafeterías",
+                  "fixed": "green"
+                },
+                "symbol": {
+                  "mode": "fixed",
+                  "fixed": "img/icons/marker/square.svg"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "id": 4,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "histogram",
+      "title": "Distribución de distancias al punto central (m)",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT distance_m AS \"Distancia (m)\"\nFROM cafeterias_teusaquillo\nWHERE distance_m IS NOT NULL"
+        }
+      ],
+      "options": {
+        "bucketSize": 250,
+        "bucketOffset": 0,
+        "combine": false,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#8F3B1B"
+          },
+          "unit": "lengthm",
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "id": 5,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Categorías de los establecimientos (desde JSONB)",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    cat.value AS \"Categoría\",\n    COUNT(*)  AS \"Establecimientos\"\nFROM cafeterias_teusaquillo c\nCROSS JOIN LATERAL jsonb_array_elements_text(c.categories) AS cat(value)\nGROUP BY cat.value\nORDER BY \"Establecimientos\" DESC, \"Categoría\""
+        }
+      ],
+      "options": {
+        "xField": "Categoría",
+        "orientation": "horizontal",
+        "showValue": "always",
+        "barWidth": 0.7,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#D4A017"
+          },
+          "custom": {
+            "fillOpacity": 85
+          }
+        },
+        "overrides": []
+      },
+      "id": 6,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Celdas de ~500 m por nivel de competencia",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH limites AS (\n    SELECT MIN(latitude)  AS lat_min, MAX(latitude)  AS lat_max,\n           MIN(longitude) AS lon_min, MAX(longitude) AS lon_max\n    FROM cafeterias_teusaquillo\n),\nmalla AS (\n    SELECT i, j\n    FROM limites,\n         generate_series(0, FLOOR((lat_max - lat_min) / 0.0045)::INT) AS i,\n         generate_series(0, FLOOR((lon_max - lon_min) / 0.0045)::INT) AS j\n),\nconteo AS (\n    SELECT FLOOR((c.latitude  - l.lat_min) / 0.0045)::INT AS i,\n           FLOOR((c.longitude - l.lon_min) / 0.0045)::INT AS j,\n           COUNT(*) AS n\n    FROM cafeterias_teusaquillo c CROSS JOIN limites l\n    GROUP BY 1, 2\n),\nniveles AS (\n    SELECT CASE\n               WHEN COALESCE(c.n, 0) >= 3 THEN '4. Saturada (3+)'\n               WHEN COALESCE(c.n, 0) = 2  THEN '3. Competida (2)'\n               WHEN COALESCE(c.n, 0) = 1  THEN '2. Baja oferta (1)'\n               ELSE '1. Sin oferta (0)'\n           END AS nivel\n    FROM malla m LEFT JOIN conteo c ON c.i = m.i AND c.j = m.j\n)\nSELECT nivel AS \"Nivel de competencia\", COUNT(*) AS \"Celdas\"\nFROM niveles\nGROUP BY nivel\nORDER BY nivel"
+        }
+      ],
+      "options": {
+        "xField": "Nivel de competencia",
+        "orientation": "horizontal",
+        "showValue": "always",
+        "barWidth": 0.7,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          },
+          "custom": {
+            "fillOpacity": 85
+          }
+        },
+        "overrides": []
+      },
+      "id": 7,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Ranking de zonas y oportunidades (consulta compleja: CTE + generate_series + funciones de ventana)",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH limites AS (\n    SELECT MIN(latitude)  AS lat_min, MAX(latitude)  AS lat_max,\n           MIN(longitude) AS lon_min, MAX(longitude) AS lon_max\n    FROM cafeterias_teusaquillo\n),\nmalla AS (                      -- todas las celdas posibles del área\n    SELECT i, j\n    FROM limites,\n         generate_series(0, FLOOR((lat_max - lat_min) / 0.0045)::INT) AS i,\n         generate_series(0, FLOOR((lon_max - lon_min) / 0.0045)::INT) AS j\n),\nconteo AS (                     -- cafeterías y diversidad por celda ocupada\n    SELECT FLOOR((c.latitude  - l.lat_min) / 0.0045)::INT AS i,\n           FLOOR((c.longitude - l.lon_min) / 0.0045)::INT AS j,\n           COUNT(*)                                        AS cafeterias,\n           COUNT(*) FILTER (WHERE jsonb_array_length(c.categories) > 1) AS hibridas,\n           string_agg(c.name, ', ' ORDER BY c.name)        AS establecimientos\n    FROM cafeterias_teusaquillo c CROSS JOIN limites l\n    GROUP BY 1, 2\n)\nSELECT\n    'C' || LPAD(m.i::TEXT, 2, '0') || '-' || LPAD(m.j::TEXT, 2, '0') AS \"Celda\",\n    ROUND((l.lat_min + (m.i + 0.5) * 0.0045)::NUMERIC, 5)          AS latitude,\n    ROUND((l.lon_min + (m.j + 0.5) * 0.0045)::NUMERIC, 5)          AS longitude,\n    COALESCE(c.cafeterias, 0)                                       AS \"Cafeterías\",\n    COALESCE(c.hibridas, 0)                                         AS \"Híbridas\",\n    DENSE_RANK() OVER (ORDER BY COALESCE(c.cafeterias, 0) DESC)     AS \"Ranking\",\n    ROUND(100.0 * COALESCE(c.cafeterias, 0)\n          / SUM(COALESCE(c.cafeterias, 0)) OVER (), 1)              AS \"% de la oferta\",\n    CASE\n        WHEN COALESCE(c.cafeterias, 0) >= 3 THEN 'Saturada'\n        WHEN COALESCE(c.cafeterias, 0) = 2  THEN 'Competida'\n        WHEN COALESCE(c.cafeterias, 0) = 1  THEN 'Baja oferta'\n        ELSE 'Sin oferta (oportunidad)'\n    END                                                             AS \"Nivel de competencia\",\n    COALESCE(c.establecimientos, '')                                AS \"Establecimientos\"\nFROM malla m\nCROSS JOIN limites l\nLEFT JOIN conteo c ON c.i = m.i AND c.j = m.j\nORDER BY \"Cafeterías\" DESC, \"Celda\""
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "latitude"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "longitude"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nivel de competencia"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Saturada": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "Competida": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "Baja oferta": {
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "Sin oferta (oportunidad)": {
+                        "color": "green",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cafeterías"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2
+                    },
+                    {
+                      "color": "red",
+                      "value": 3
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% de la oferta"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Celda"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Híbridas"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ranking"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "id": 8,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Inventario de establecimientos",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "rds-cafeterias"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    name                                          AS \"Cafetería\",\n    primary_category                              AS \"Categoría principal\",\n    CASE WHEN jsonb_array_length(categories) > 1\n         THEN 'Sí' ELSE 'No' END                  AS \"Multicategoría\",\n    (SELECT string_agg(value, ', ')\n       FROM jsonb_array_elements_text(categories)) AS \"Todas las categorías\",\n    distance_m                                    AS \"Distancia (m)\",\n    COALESCE(address, 'Sin dirección')            AS \"Dirección\"\nFROM cafeterias_teusaquillo\nORDER BY distance_m"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "count"
+          ],
+          "fields": [
+            "Cafetería"
+          ],
+          "countRows": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Multicategoría"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "Sí": {
+                        "color": "blue",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Distancia (m)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              },
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      },
+      "id": 9,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "rds-cafeterias"
+      }
+    }
+  ]
+}

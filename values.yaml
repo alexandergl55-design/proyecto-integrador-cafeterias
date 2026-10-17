@@ -1,0 +1,115 @@
+# =====================================================================
+# values.yaml — Grafana sobre MicroK8s con Helm
+# Proyecto Integrador · Cafeterías de Teusaquillo
+#
+# Reutiliza sin cambios el dashboard de la Actividad 5: la fuente de
+# datos se provisiona con el mismo uid (rds-cafeterias) que referencian
+# los 9 paneles, de modo que cafeterias.json funciona tal cual.
+#
+# Ninguna credencial aparece aquí: endpoint, base y contraseña se leen
+# de Secrets de Kubernetes mediante variables de entorno.
+# =====================================================================
+
+# --- Exposición del servicio -----------------------------------------
+# NodePort publica Grafana en el puerto 30000 del nodo. Es la opción
+# más simple en un clúster de un solo nodo: no requiere balanceador.
+service:
+  type: NodePort
+  port: 80
+  targetPort: 3000
+  nodePort: 30000
+
+# --- Credenciales de administrador -----------------------------------
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+# --- Variables que consume el provisioning ---------------------------
+envValueFrom:
+  RDS_ENDPOINT:
+    secretKeyRef:
+      name: rds-credenciales
+      key: endpoint
+  RDS_DB:
+    secretKeyRef:
+      name: rds-credenciales
+      key: database
+  GRAFANA_DB_PASSWORD:
+    secretKeyRef:
+      name: rds-credenciales
+      key: password
+
+# --- Fuente de datos: Amazon RDS PostgreSQL --------------------------
+# Usuario grafana_reader (solo SELECT) y SSL obligatorio, igual que en
+# el despliegue con Docker de la Actividad 5.
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: RDS Cafeterías
+        uid: rds-cafeterias
+        type: grafana-postgresql-datasource
+        access: proxy
+        url: ${RDS_ENDPOINT}:5432
+        user: grafana_reader
+        isDefault: true
+        editable: false
+        jsonData:
+          database: ${RDS_DB}
+          sslmode: require
+          postgresVersion: 1500
+          timescaledb: false
+          maxOpenConns: 5
+        secureJsonData:
+          password: ${GRAFANA_DB_PASSWORD}
+
+# --- Carga automática del dashboard ----------------------------------
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: cafeterias
+        orgId: 1
+        folder: Proyecto Integrador
+        type: file
+        disableDeletion: true
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/cafeterias
+
+# El ConfigMap lo crea desplegar-microk8s.sh a partir de cafeterias.json
+dashboardsConfigMaps:
+  cafeterias: grafana-dashboard-cafeterias
+
+# --- Configuración de Grafana ----------------------------------------
+# Visor anónimo de solo lectura: el evaluador entra sin credenciales y
+# no puede modificar nada.
+grafana.ini:
+  auth.anonymous:
+    enabled: true
+    org_name: Main Org.
+    org_role: Viewer
+  users:
+    viewers_can_edit: false
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+
+# --- Recursos y almacenamiento ---------------------------------------
+# Sin volumen persistente: el dashboard viene del ConfigMap y los datos
+# viven en RDS, así que el pod es desechable por diseño.
+persistence:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Una sola réplica: el nodo es uno solo. Con más nodos, subir replicaCount
+# y cambiar el servicio a LoadBalancer.
+replicas: 1
